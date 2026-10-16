@@ -464,14 +464,98 @@ class MainActivity : Activity() {
     }
 
     private fun mods() {
-        pageHeading("Loja de Mods", "Catálogo demonstrativo.")
-        listOf("BetterFps" to "Desempenho", "OptiFine" to "Gráficos", "JourneyMap" to "Mapas", "JEI" to "Utilitários", "Create" to "Tecnologia").forEach {
-            val c = card()
-            c.addView(text("▦  ${it.first}", 15f, Color.WHITE, true))
-            c.addView(text(it.second, 11f, muted))
-            c.addView(actionButton("Instalar") { info("A instalação de mods ainda não está conectada.") })
-            body.addView(c)
+        pageHeading("Loja de Mods", "Pesquisa real no Modrinth. O mod precisa ser compatível com a versão e o loader.")
+        val query = android.widget.EditText(this).apply {
+            hint = "Buscar mods (ex.: minimap, performance)"
+            setHintTextColor(muted)
+            setTextColor(Color.WHITE)
+            setSingleLine(true)
+            background = rounded(panel, 10, mint)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
         }
+        body.addView(query, LinearLayout.LayoutParams(-1, dp(48)))
+        body.addView(actionButton("Pesquisar no Modrinth") { searchModrinth(query.text.toString().trim()) })
+        val selectedVersion = getSharedPreferences("endernova", MODE_PRIVATE).getString("selected_version", null)
+        body.addView(text("Versão-alvo: " + (selectedVersion ?: "não selecionada"), 12f, muted))
+        body.addView(text("Arquivos são salvos em .minecraft/mods. Isso não instala Forge/Fabric nem garante compatibilidade.", 11f, muted))
+    }
+
+    private fun searchModrinth(query: String) {
+        if (query.isBlank()) { info("Digite o nome ou o tipo de mod para pesquisar."); return }
+        info("Pesquisando mods no Modrinth…")
+        Thread {
+            try {
+                val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+                val url = URL("https://api.modrinth.com/v2/search?query=" + encoded + "&facets=%5B%5B%22project_type%3Amod%22%5D%5D&limit=20")
+                val conn = url.openConnection()
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("User-Agent", "EnderNovaLauncher/1.0 (Android)")
+                val results = JSONObject(conn.getInputStream().bufferedReader().use { it.readText() }).getJSONArray("hits")
+                runOnUiThread {
+                    if (currentPage != "Loja de Mods") return@runOnUiThread
+                    body.removeAllViews()
+                    pageHeading("Resultados do Modrinth", results.length().toString() + " projetos encontrados")
+                    body.addView(actionButton("Nova pesquisa") { showPage("Loja de Mods") })
+                    for (i in 0 until results.length()) {
+                        val project = results.getJSONObject(i)
+                        val title = project.optString("title", project.optString("slug", "Mod"))
+                        val projectId = project.optString("project_id", "")
+                        val description = project.optString("description", "")
+                        val c = card()
+                        c.addView(text(title, 15f, Color.WHITE, true))
+                        c.addView(text(description, 11f, muted))
+                        c.addView(actionButton("Baixar versão compatível") { downloadModrinthProject(projectId, title) })
+                        body.addView(c)
+                    }
+                }
+            } catch (e: Exception) { runOnUiThread { info("Falha na pesquisa Modrinth: " + (e.message ?: "erro de rede")) } }
+        }.start()
+    }
+
+    private fun downloadModrinthProject(projectId: String, title: String) {
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val gameVersion = prefs.getString("selected_version", null)
+        if (gameVersion.isNullOrBlank()) { info("Primeiro selecione uma versão na aba Versões."); return }
+        info("Buscando arquivo compatível de " + title + "…")
+        Thread {
+            try {
+                val encodedGame = java.net.URLEncoder.encode("[\"" + gameVersion + "\"]", "UTF-8")
+                val url = URL("https://api.modrinth.com/v2/project/" + projectId + "/version?game_versions=" + encodedGame)
+                val conn = url.openConnection()
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("User-Agent", "EnderNovaLauncher/1.0 (Android)")
+                val versions = org.json.JSONArray(conn.getInputStream().bufferedReader().use { it.readText() })
+                if (versions.length() == 0) throw IllegalStateException("Nenhuma versão declara compatibilidade com Minecraft " + gameVersion)
+                val chosen = versions.getJSONObject(0)
+                val files = chosen.getJSONArray("files")
+                var file: JSONObject? = null
+                for (i in 0 until files.length()) { val candidate = files.getJSONObject(i); if (candidate.optBoolean("primary", false)) { file = candidate; break } }
+                if (file == null && files.length() > 0) file = files.getJSONObject(0)
+                val selected = file ?: throw IllegalStateException("O projeto não oferece arquivo para baixar.")
+                val fileName = File(selected.getString("filename")).name
+                if (!fileName.endsWith(".jar", ignoreCase = true)) throw IllegalStateException("O arquivo principal não é um JAR de mod.")
+                val expectedHash = selected.optJSONObject("hashes")?.optString("sha512", "") ?: ""
+                val targetDir = File(filesDir, ".minecraft/mods/" + gameVersion)
+                targetDir.mkdirs()
+                val target = File(targetDir, fileName)
+                val temp = File(targetDir, fileName + ".part")
+                val download = URL(selected.getString("url")).openConnection()
+                download.connectTimeout = 20000
+                download.readTimeout = 120000
+                download.setRequestProperty("User-Agent", "EnderNovaLauncher/1.0 (Android)")
+                download.getInputStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+                if (expectedHash.isNotBlank()) {
+                    val digest = MessageDigest.getInstance("SHA-512")
+                    temp.inputStream().use { input -> val buffer = ByteArray(8192); while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) } }
+                    val actual = digest.digest().joinToString("") { b -> "%02x".format(b) }
+                    if (!actual.equals(expectedHash, true)) throw IllegalStateException("O hash do arquivo não confere.")
+                }
+                if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = true); temp.delete() }
+                runOnUiThread { info("Mod baixado e verificado: " + fileName + ". Ele só será carregado quando um loader compatível estiver instalado.") }
+            } catch (e: Exception) { runOnUiThread { info("Não foi possível instalar " + title + ": " + (e.message ?: "erro de rede")) } }
+        }.start()
     }
 
     private fun accounts() {
