@@ -8,6 +8,8 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
+import android.view.animation.OvershootInterpolator
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -65,11 +67,16 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(4, 10, 10))
         }
         val mark = TextView(this).apply {
-            text = "▦"
+            text = "✦"
             textSize = 28f
             gravity = Gravity.CENTER
             setTextColor(green)
             background = rounded(panel2, 15, green)
+            elevation = dp(5).toFloat()
+            alpha = 0f
+            scaleX = 0.72f
+            scaleY = 0.72f
+            post { animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(520L).setInterpolator(OvershootInterpolator(1.15f)).start() }
         }
         bar.addView(mark, LinearLayout.LayoutParams(dp(48), dp(48)))
         val titles = LinearLayout(this).apply {
@@ -84,7 +91,9 @@ class MainActivity : Activity() {
             textSize = 24f
             gravity = Gravity.CENTER
             setTextColor(mint)
+            contentDescription = "Abrir configurações"
             setOnClickListener { showPage("Configurações") }
+            bindTouchAnimation(this)
         }
         bar.addView(settings, LinearLayout.LayoutParams(dp(40), dp(48)))
         return bar
@@ -106,6 +115,9 @@ class MainActivity : Activity() {
             }
             cell.addView(text(item.second, 19f, if (currentPage == item.first || (item.first == "Config." && currentPage == "Configurações")) mint else muted, true).apply { gravity = Gravity.CENTER })
             cell.addView(text(item.first, 9f, if (currentPage == item.first || (item.first == "Config." && currentPage == "Configurações")) mint else muted, true).apply { gravity = Gravity.CENTER })
+            cell.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(24, 105, 68)), rounded(Color.rgb(5, 22, 18), 12, null), rounded(Color.WHITE, 12, null))
+            cell.minimumHeight = dp(52)
+            bindTouchAnimation(cell)
             nav.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
         }
         return nav
@@ -136,25 +148,29 @@ class MainActivity : Activity() {
             body.addView(row)
             body.addView(actionButton("Ver erros e copiar relatório") { showPage("Diagnóstico") })
         }
-        // Soft staggered entrance animation for each screen's content.
+        // Staggered screen entrance plus small label animations throughout nested cards.
         val animationsEnabled = getSharedPreferences("endernova", MODE_PRIVATE)
             .getBoolean("setting_Animações da interface", true)
         for (index in 0 until body.childCount) {
             val child = body.getChildAt(index)
             if (animationsEnabled) {
                 child.alpha = 0f
-                child.translationY = dp(10).toFloat()
-                child.animate()
-                    .alpha(1f)
-                    .translationY(0f)
-                    .setStartDelay((index * 35L).coerceAtMost(280L))
-                    .setDuration(240L)
-                    .start()
+                child.translationY = dp(15).toFloat()
+                child.scaleX = 0.985f
+                child.scaleY = 0.985f
+                child.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+                    .setStartDelay((index * 38L).coerceAtMost(300L))
+                    .setDuration(310L).setInterpolator(OvershootInterpolator(0.65f)).start()
+                animateNestedText(child, (index * 34L).coerceAtMost(220L), animationsEnabled)
             } else {
                 child.alpha = 1f
                 child.translationY = 0f
+                child.scaleX = 1f
+                child.scaleY = 1f
+                animateNestedText(child, 0L, false)
             }
         }
+        installTouchEffects(body)
     }
 
     private fun onboarding() {
@@ -1138,7 +1154,8 @@ class MainActivity : Activity() {
     private fun card(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(14), dp(13), dp(14), dp(13))
-        background = rounded(panel, 14, Color.rgb(19, 62, 49))
+        background = gradientCard()
+        elevation = dp(2).toFloat()
         val lp = LinearLayout.LayoutParams(-1, -2)
         lp.bottomMargin = dp(10)
         layoutParams = lp
@@ -1146,17 +1163,86 @@ class MainActivity : Activity() {
 
     private fun actionButton(label: String, click: () -> Unit): Button = Button(this).apply {
         text = label
-        textSize = 11f
+        textSize = 12f
         isAllCaps = false
+        letterSpacing = 0.015f
+        minHeight = dp(46)
         setTextColor(Color.rgb(2, 24, 12))
-        background = rounded(green, 10, null)
-        setOnClickListener { click() }
-        val lp = LinearLayout.LayoutParams(-1, dp(44))
+        background = android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.rgb(177, 255, 201)),
+            rounded(green, 12, Color.rgb(112, 255, 161)),
+            rounded(Color.WHITE, 12, null)
+        )
+        elevation = dp(3).toFloat()
+        stateListAnimator = null
+        setOnClickListener { animateClick(this); click() }
+        bindTouchAnimation(this)
+        val lp = LinearLayout.LayoutParams(-1, dp(46))
         lp.topMargin = dp(8)
         layoutParams = lp
     }
 
-    private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {
+    private fun bindTouchAnimation(view: View) {
+        view.isHapticFeedbackEnabled = true
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().cancel()
+                    v.animate().scaleX(0.965f).scaleY(0.965f).translationZ(-dp(1).toFloat()).setDuration(85L).start()
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    v.animate().scaleX(1f).scaleY(1f).translationZ(0f).setDuration(210L).setInterpolator(OvershootInterpolator(1.25f)).start()
+                }
+                MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).translationZ(0f).setDuration(150L).start()
+            }
+            false
+        }
+    }
+
+    private fun animateClick(view: View) {
+        view.animate().cancel()
+        view.scaleX = 0.97f
+        view.scaleY = 0.97f
+        view.animate().scaleX(1f).scaleY(1f).setDuration(260L).setInterpolator(OvershootInterpolator(1.35f)).start()
+    }
+
+    private fun animateNestedText(view: View, baseDelay: Long, enabled: Boolean) {
+        if (view !is ViewGroup) return
+        var textIndex = 0
+        for (i in 0 until view.childCount) {
+            val child = view.getChildAt(i)
+            if (child is ViewGroup) {
+                animateNestedText(child, baseDelay + (textIndex * 18L).coerceAtMost(100L), enabled)
+            } else if (child is TextView && child !is Button) {
+                if (enabled) {
+                    child.animate().cancel()
+                    child.alpha = 0f
+                    child.translationY = dp(4).toFloat()
+                    child.animate().alpha(1f).translationY(0f).setStartDelay((baseDelay + textIndex * 18L).coerceAtMost(320L)).setDuration(220L).start()
+                } else {
+                    child.alpha = 1f
+                    child.translationY = 0f
+                }
+                textIndex++
+            }
+        }
+    }
+
+    private fun installTouchEffects(view: View) {
+        if (view.isClickable && view !is Button) bindTouchAnimation(view)
+        if (view is ViewGroup) for (i in 0 until view.childCount) installTouchEffects(view.getChildAt(i))
+    }
+
+    private fun gradientCard(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.rgb(7, 24, 21), Color.rgb(10, 43, 32), Color.rgb(6, 20, 19))
+    ).apply {
+        cornerRadius = dp(14).toFloat()
+        setStroke(dp(1), Color.rgb(26, 91, 61))
+    }
+
+    private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {    private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {
         text = value
         textSize = size
         setTextColor(color)
