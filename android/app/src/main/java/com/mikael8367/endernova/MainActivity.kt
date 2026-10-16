@@ -12,6 +12,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.SeekBar
+import org.json.JSONObject
+import java.net.URL
 
 /**
  * EnderNova Android UI prototype. It mirrors the green-on-black dashboard concept.
@@ -209,14 +212,50 @@ class MainActivity : Activity() {
     }
 
     private fun versions() {
-        pageHeading("Versões do Minecraft", "Catálogo e opções de instalação.")
-        listOf("1.20.4" to "Lançamento oficial", "1.19.4" to "Lançamento oficial", "1.18.2" to "Lançamento oficial", "1.12.2" to "Versão selecionada • Java 8").forEach {
-            val c = card()
-            c.addView(text("▦  Minecraft ${it.first}", 15f, Color.WHITE, true))
-            c.addView(text(it.second, 11f, muted))
-            c.addView(actionButton("Selecionar") { info("Versão ${it.first} selecionada na prévia. A instalação completa ainda não está disponível.") })
-            body.addView(c)
-        }
+        pageHeading("Versões do Minecraft", "Buscando o manifesto oficial de versões…")
+        body.addView(actionButton("Carregar / atualizar versões") { loadVersions() })
+        loadVersions()
+    }
+
+    private fun loadVersions() {
+        Thread {
+            try {
+                val conn = URL("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json").openConnection()
+                conn.connectTimeout = 12000
+                conn.readTimeout = 12000
+                val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText() })
+                val list = json.getJSONArray("versions")
+                val versions = ArrayList<Pair<String, String>>()
+                for (i in 0 until list.length()) {
+                    val v = list.getJSONObject(i)
+                    versions.add(v.getString("id") to v.getString("type"))
+                }
+                runOnUiThread {
+                    if (currentPage != "Versões") return@runOnUiThread
+                    body.removeAllViews()
+                    pageHeading("Versões do Minecraft", "${versions.size} versões no manifesto oficial")
+                    body.addView(actionButton("Atualizar catálogo") { loadVersions() })
+                    versions.forEach { v ->
+                        val c = card()
+                        c.addView(text("Minecraft ${v.first}", 14f, Color.WHITE, true))
+                        c.addView(text(v.second, 11f, muted))
+                        c.addView(actionButton("Selecionar") {
+                            getSharedPreferences("endernova", MODE_PRIVATE).edit().putString("selected_version", v.first).apply()
+                            info("Versão ${v.first} selecionada. A instalação dos arquivos do jogo ainda não está integrada.")
+                        })
+                        body.addView(c)
+                    }
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    if (currentPage == "Versões") {
+                        body.removeAllViews()
+                        pageHeading("Versões do Minecraft", "Não foi possível carregar o manifesto. Verifique a internet.")
+                        body.addView(actionButton("Tentar novamente") { loadVersions() })
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun modloaders() {
@@ -253,12 +292,54 @@ class MainActivity : Activity() {
     }
 
     private fun settings() {
-        pageHeading("Configurações", "Preferências do launcher.")
-        settingRow("Aparência", "Tema escuro e verde")
-        settingRow("Memória RAM", "2 GB • preferência visual")
-        settingRow("Java", "Runtime ainda não integrado")
-        settingRow("Limpar dados", "Histórico e preferências locais")
-        settingRow("Exportar configurações", "Salvar / restaurar")
+        pageHeading("Configurações", "Personalize o launcher.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val currentRam = prefs.getInt("ram_mb", 2048)
+        body.addView(text("Memória RAM: ${currentRam} MB", 15f, Color.WHITE, true))
+        val seek = SeekBar(this).apply {
+            max = 3072
+            progress = (currentRam - 512).coerceIn(0, 3072)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) prefs.edit().putInt("ram_mb", progress + 512).apply()
+                }
+                override fun onStartTrackingTouch(bar: SeekBar?) {}
+                override fun onStopTrackingTouch(bar: SeekBar?) { showPage("Configurações") }
+            })
+        }
+        body.addView(seek)
+        body.addView(space(10))
+        listOf("Java 8", "Java 17", "Java 21").forEach { runtime ->
+            val key = "runtime_" + runtime.replace(" ", "")
+            val check = android.widget.CheckBox(this).apply {
+                text = "Usar $runtime"
+                setTextColor(Color.WHITE)
+                buttonTintList = android.content.res.ColorStateList.valueOf(green)
+                isChecked = prefs.getBoolean(key, runtime == "Java 8")
+                setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean(key, checked).apply() }
+            }
+            body.addView(check)
+        }
+        listOf("Animações da interface", "Notificações", "Confirmar antes de limpar dados").forEach { label ->
+            val toggle = android.widget.Switch(this).apply {
+                text = label
+                setTextColor(Color.WHITE)
+                isChecked = prefs.getBoolean("setting_" + label, true)
+                setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean("setting_" + label, checked).apply() }
+            }
+            body.addView(toggle)
+        }
+        body.addView(actionButton("Refazer configuração inicial") {
+            prefs.edit().putBoolean("setup_done", false).apply()
+            showPage("Primeiros passos")
+        })
+        body.addView(actionButton("Limpar preferências") {
+            prefs.edit().clear().apply()
+            info("Preferências locais apagadas.")
+            showPage("Configurações")
+        })
+        settingRow("Aparência", "Tema verde e preto")
+        settingRow("Contas", "Offline, Microsoft e Ely.by")
         settingRow("Sobre", "EnderNova Launcher • Mikael Dev")
     }
 
