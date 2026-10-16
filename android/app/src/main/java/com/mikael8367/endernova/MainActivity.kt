@@ -202,8 +202,8 @@ class MainActivity : Activity() {
         body.addView(player, LinearLayout.LayoutParams(-1, dp(48)))
         body.addView(space(10))
         val warning = card()
-        warning.addView(text("Download do motor", 15f, Color.WHITE, true))
-        warning.addView(text("A seleção fica salva, mas esta versão ainda não inclui pacotes Java para baixar nem o motor de execução do Minecraft. O jogo não inicia até essa integração ser feita.", 12f, muted))
+        warning.addView(text("⚠ MOTOR DO MINECRAFT NÃO INTEGRADO", 15f, Color.rgb(255, 190, 90), true))
+        warning.addView(text("O catálogo oficial e o download de cliente, metadados, bibliotecas e assets estão implementados. Porém, o motor Java para Android, a preparação de natives e a inicialização real do jogo ainda não foram integrados. Baixar os arquivos não significa que o Minecraft já pode abrir.", 12f, muted))
         body.addView(warning)
         body.addView(actionButton("Salvar e continuar") {
             prefs.edit().putString("player_name", player.text.toString().trim()).putBoolean("setup_done", true).apply()
@@ -224,16 +224,30 @@ class MainActivity : Activity() {
         val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
         val ramMb = prefs.getInt("ram_mb", 2048)
-        val instanceCount = if (prefs.getString("selected_version", null) != null) 1 else 0
+        val installedInstances = try { org.json.JSONArray(prefs.getString("instances_json", "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
+        val instanceCount = installedInstances.length()
         metrics.addView(metric("◉", "RAM configurada", String.format("%.1f GB", ramMb / 1024.0), "Limite configurado"), LinearLayout.LayoutParams(0, -2, 1f))
         metrics.addView(space(10), LinearLayout.LayoutParams(dp(10), 1))
-        metrics.addView(metric("▤", "Versão selecionada", instanceCount.toString(), if (instanceCount == 1) prefs.getString("selected_version", "") ?: "" else "Nenhuma"), LinearLayout.LayoutParams(0, -2, 1f))
+        metrics.addView(metric("▤", "Minhas instâncias", instanceCount.toString(), if (instanceCount == 1) "1 perfil salvo" else "Perfis salvos"), LinearLayout.LayoutParams(0, -2, 1f))
         body.addView(metrics)
         body.addView(sectionTitle("Minhas Instâncias", "VER TODAS") { showPage("Instâncias") })
-        val empty = card()
-        empty.addView(text("Nenhuma instância criada", 15f, Color.WHITE, true))
-        empty.addView(text("Escolha uma versão na aba Versões para começar.", 12f, muted))
-        body.addView(empty)
+        if (installedInstances.length() == 0) {
+            val empty = card()
+            empty.addView(text("Nenhuma instância criada", 15f, Color.WHITE, true))
+            empty.addView(text("Baixe uma versão e toque em “Criar instância desta versão”, ou abra Instâncias para criar um perfil manualmente.", 12f, muted))
+            body.addView(empty)
+        } else {
+            for (i in 0 until minOf(installedInstances.length(), 3)) {
+                val instance = installedInstances.optJSONObject(i) ?: continue
+                val row = card()
+                row.addView(text(instance.optString("name", "Instância"), 15f, Color.WHITE, true))
+                row.addView(text("Minecraft " + instance.optString("version", "desconhecida"), 12f, mint, true))
+                row.addView(text("Arquivos do jogo: " + File(filesDir, ".minecraft/versions/" + instance.optString("version")).absolutePath, 9f, muted))
+                row.addView(actionButton("Abrir em Minhas Instâncias") { showPage("Instâncias") })
+                body.addView(row)
+            }
+        }
+        body.addView(actionButton("+ Criar instância") { showPage("Instâncias"); info("Use “Criar instância” para cadastrar um perfil.") })
         body.addView(space(8))
         body.addView(actionButton("▶   JOGAR  •  MOTOR AINDA NÃO INTEGRADO") {
             info("O motor Java para Android ainda não está integrado. Este botão não inicia o jogo.")
@@ -246,7 +260,17 @@ class MainActivity : Activity() {
     }
 
     private fun instances() {
-        pageHeading("Minhas Instâncias", "Perfis separados por versão. A inicialização do jogo ainda depende do motor Java.")
+        pageHeading("Minhas Instâncias", "Perfis e versões baixadas ficam no armazenamento privado do app. O jogo ainda não pode iniciar porque o motor Java não foi integrado.")
+        val storage = card()
+        storage.addView(text("LOCAL DOS ARQUIVOS", 11f, mint, true))
+        storage.addView(text(File(filesDir, ".minecraft").absolutePath, 10f, Color.WHITE))
+        storage.addView(text("Os arquivos ficam na pasta privada do EnderNova; não aparecem automaticamente em Downloads ou no gerenciador de arquivos.", 11f, muted))
+        storage.addView(actionButton("Copiar caminho") {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Caminho do Minecraft", File(filesDir, ".minecraft").absolutePath))
+            info("Caminho copiado.")
+        })
+        body.addView(storage)
         val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
         fun readInstances(): org.json.JSONArray = try {
             org.json.JSONArray(prefs.getString("instances_json", "[]") ?: "[]")
@@ -322,7 +346,8 @@ class MainActivity : Activity() {
             val c = card()
             c.addView(text(name, 16f, Color.WHITE, true))
             c.addView(text("Minecraft $version", 12f, mint, true))
-            c.addView(text("Perfil salvo neste dispositivo • inicialização ainda não integrada", 10f, muted))
+            c.addView(text("Perfil salvo neste dispositivo • motor Java NÃO integrado", 10f, Color.rgb(255, 190, 90)))
+            c.addView(text("Pasta desta versão: " + File(filesDir, ".minecraft/versions/" + version).absolutePath, 9f, muted))
             c.addView(actionButton("Definir versão selecionada") {
                 prefs.edit().putString("selected_version", version).putString("selected_instance_id", id).apply()
                 info("Versão $version selecionada.")
@@ -416,10 +441,17 @@ class MainActivity : Activity() {
                             else -> v.second
                         }
                         c.addView(text(typeLabel, 11f, muted))
-                        c.addView(actionButton("Selecionar e baixar") {
+                        val downloaded = prefs.getBoolean("version_downloaded_" + v.first, false)
+                        c.addView(actionButton(if (downloaded) "Baixada ✓ • baixar novamente" else "Baixar versão oficial") {
                             prefs.edit().putString("selected_version", v.first).apply()
                             downloadMinecraftVersion(v.first)
                         })
+                        if (downloaded) {
+                            c.addView(text("Cliente, metadados, bibliotecas e assets guardados no armazenamento privado do app.", 10f, mint))
+                            c.addView(actionButton("＋ Criar instância desta versão") {
+                                createInstanceForVersion(v.first)
+                            })
+                        }
                         body.addView(c)
                     }
                 }
@@ -435,6 +467,24 @@ class MainActivity : Activity() {
         }.start()
     }
 
+
+    private fun createInstanceForVersion(versionId: String) {
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val all = try { org.json.JSONArray(prefs.getString("instances_json", "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
+        val defaultName = "Minecraft $versionId"
+        val duplicate = (0 until all.length()).any { all.optJSONObject(it)?.optString("version") == versionId && all.optJSONObject(it)?.optString("name") == defaultName }
+        if (duplicate) {
+            info("Já existe uma instância padrão para Minecraft $versionId.")
+            showPage("Instâncias")
+            return
+        }
+        all.put(JSONObject().put("id", java.util.UUID.randomUUID().toString())
+            .put("name", defaultName).put("version", versionId).put("createdAt", System.currentTimeMillis()))
+        prefs.edit().putString("instances_json", all.toString())
+            .putString("selected_version", versionId).apply()
+        info("Instância criada. Ela aparecerá em Início e Minhas Instâncias. O motor Java ainda não está integrado.")
+        showPage("Instâncias")
+    }
 
     private fun downloadMinecraftVersion(versionId: String) {
         info("Preparando download do Minecraft " + versionId + "…")
