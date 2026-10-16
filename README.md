@@ -1,26 +1,27 @@
 # EnderNova Launcher
 
-Launcher Android para Minecraft Java, com identidade visual própria em preto, verde neon e roxo.
+Painel web em React + Vite para gerenciar versões e perfis do Minecraft Java.
 
-## Estado do projeto
+## Funciona nesta etapa
+- Consulta o manifesto oficial de versões da Mojang em tempo real.
+- Pesquisa e filtra versões por tipo.
+- Solicita ao navegador o JSON de metadados e o JAR cliente da versão escolhida.
+- Cria, seleciona e remove perfis offline locais.
+- Cria e remove configurações de instâncias.
+- Salva perfis, instâncias, histórico e preferência de memória no armazenamento local do navegador.
 
-Este repositório contém o ponto de partida da interface Android em Kotlin e Jetpack Compose. Ainda não é um launcher funcional para iniciar Minecraft: integração com runtimes, autenticação, download de versões e carregamento de Forge/Fabric/OptiFine precisam ser implementados e testados separadamente.
+## Limitações importantes
+Este repositório é uma aplicação web, não um launcher Android nativo. Baixar o JAR e o JSON **não** é uma instalação completa jogável. Ainda não baixa todas as bibliotecas e assets, instala o Java Runtime, instala Forge/Fabric/OptiFine, executa a JVM no Android ou autentica contas Microsoft/Ely.by. Perfis offline não são contas oficiais e não permitem entrar em servidores que exigem autenticação. Nunca digite senhas neste painel.
 
-## Requisitos
+Para jogar no Android será necessário um componente nativo compatível com o runtime Java, gerenciamento completo de bibliotecas/assets, integração de autenticação oficial e testes no dispositivo.
 
-- Android Studio recente
-- JDK 17
-- Android SDK 35
+## Desenvolvimento
+Requer Node.js 20.19+ ou 22.12+.
 
-## Compilar
+```sh
+npm install
+npm run dev
+npm run build
+```
 
-Abra o projeto no Android Studio e aguarde a sincronização do Gradle. Depois execute a configuração `app` em um emulador ou aparelho Android.
-
-## Funcionalidades da primeira etapa
-
-- Tela inicial com botão Jogar
-- Lista inicial de versões ilustrativas
-- Navegação entre Início, Versões, Mods e Configurações
-- Tema escuro com detalhes neon
-
-As versões exibidas são exemplos de interface e ainda não são instaladas nem iniciadas pelo aplicativo.
+O catálogo e os downloads exigem internet e podem depender das permissões do navegador.
