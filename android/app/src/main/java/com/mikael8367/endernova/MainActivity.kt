@@ -332,24 +332,24 @@ class MainActivity : Activity() {
     }
 
     private fun versions() {
-        pageHeading("Versões do Minecraft", "Escolha o canal e depois selecione a versão para baixar.")
-        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        pageHeading("Versões do Minecraft", "Todas as versões listadas no manifesto oficial, das antigas às atuais.")
         body.addView(actionButton("Carregar / atualizar versões") { loadVersions() })
         loadVersions()
     }
 
     private fun loadVersions() {
         val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
-        val channel = prefs.getString("version_channel", "release") ?: "release"
+        val channel = prefs.getString("version_channel", "all") ?: "all"
         val channelName = when (channel) {
+            "release" -> "Release"
             "snapshot" -> "Snapshot"
             "old_beta" -> "Beta"
             "old_alpha" -> "Alfa"
-            else -> "Release"
+            else -> "Todas as versões"
         }
         Thread {
             try {
-                val conn = URL("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json").openConnection()
+                val conn = URL("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json").openConnection()
                 conn.connectTimeout = 12000
                 conn.readTimeout = 12000
                 val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText() })
@@ -357,13 +357,20 @@ class MainActivity : Activity() {
                 val versions = ArrayList<Pair<String, String>>()
                 for (i in 0 until list.length()) {
                     val v = list.getJSONObject(i)
-                    if (v.optString("type") == channel) versions.add(v.getString("id") to v.optString("type", channel))
+                    val type = v.optString("type", "unknown")
+                    if (channel == "all" || type == channel) versions.add(v.getString("id") to type)
                 }
                 runOnUiThread {
                     if (currentPage != "Versões") return@runOnUiThread
                     body.removeAllViews()
-                    pageHeading("Versões • $channelName", "${versions.size} versões encontradas")
-                    val channels = listOf("Release" to "release", "Snapshot" to "snapshot", "Beta" to "old_beta", "Alfa" to "old_alpha")
+                    pageHeading("Versões • $channelName", "${versions.size} versões no catálogo oficial")
+                    val channels = listOf(
+                        "Todas" to "all",
+                        "Release" to "release",
+                        "Snapshot" to "snapshot",
+                        "Beta antiga" to "old_beta",
+                        "Alfa antiga" to "old_alpha"
+                    )
                     val picker = android.widget.Spinner(this).apply {
                         adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, channels.map { it.first })
                         setSelection(channels.indexOfFirst { it.second == channel }.coerceAtLeast(0))
@@ -378,14 +385,21 @@ class MainActivity : Activity() {
                             }
                         }
                     }
-                    body.addView(text("Tipo de versão", 14f, Color.WHITE, true))
+                    body.addView(text("Mostrar tipo", 14f, Color.WHITE, true))
                     body.addView(picker, LinearLayout.LayoutParams(-1, dp(48)))
                     body.addView(actionButton("Atualizar catálogo") { loadVersions() })
-                    if (versions.isEmpty()) body.addView(text("Não há versões desse tipo no manifesto oficial.", 12f, muted))
+                    if (versions.isEmpty()) body.addView(text("Não foram encontradas versões desse tipo.", 12f, muted))
                     versions.forEach { v ->
                         val c = card()
                         c.addView(text("Minecraft ${v.first}", 14f, Color.WHITE, true))
-                        c.addView(text(channelName, 11f, muted))
+                        val typeLabel = when (v.second) {
+                            "release" -> "Release"
+                            "snapshot" -> "Snapshot / pré-lançamento"
+                            "old_beta" -> "Beta antiga"
+                            "old_alpha" -> "Alfa antiga"
+                            else -> v.second
+                        }
+                        c.addView(text(typeLabel, 11f, muted))
                         c.addView(actionButton("Selecionar e baixar") {
                             prefs.edit().putString("selected_version", v.first).apply()
                             downloadMinecraftVersion(v.first)
