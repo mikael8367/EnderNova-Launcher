@@ -475,12 +475,37 @@ class MainActivity : Activity() {
     }
 
     private fun accounts() {
-        pageHeading("Perfis", "Escolha o tipo de conta.")
-        listOf("Offline" to "Perfil local de demonstração", "Microsoft" to "Autenticação não conectada", "Ely.by" to "Autenticação não conectada").forEach {
+        pageHeading("Perfis", "Perfil offline local; contas online exigem OAuth oficial.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val savedName = prefs.getString("player_name", "") ?: ""
+        val input = android.widget.EditText(this).apply {
+            hint = "Nome offline (3–16 caracteres)"
+            setHintTextColor(muted)
+            setTextColor(Color.WHITE)
+            setSingleLine(true)
+            setText(savedName)
+            background = rounded(panel, 10, mint)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        body.addView(text("Perfil offline", 16f, Color.WHITE, true))
+        body.addView(input, LinearLayout.LayoutParams(-1, dp(48)))
+        body.addView(actionButton("Salvar perfil offline") {
+            val name = input.text.toString().trim()
+            if (!name.matches(Regex("^[A-Za-z0-9_]{3,16}$"))) {
+                info("Use de 3 a 16 caracteres: letras, números ou sublinhado.")
+            } else {
+                prefs.edit().putString("player_name", name).putString("account_type", "offline").apply()
+                info("Perfil offline '$name' salvo neste dispositivo.")
+            }
+        })
+        body.addView(space(10))
+        listOf("Microsoft" to "Login OAuth e validação do perfil Minecraft ainda não integrados.", "Ely.by" to "OAuth Ely.by ainda não integrado; requer configuração oficial do aplicativo.").forEach {
             val c = card()
-            c.addView(text("♙  ${it.first}", 16f, Color.WHITE, true))
+            c.addView(text(it.first, 16f, Color.WHITE, true))
             c.addView(text(it.second, 11f, muted))
-            c.addView(actionButton("Selecionar / Entrar") { info("A autenticação real ainda não foi integrada.") })
+            c.addView(actionButton("Indisponível nesta versão") {
+                info("Este login ainda não funciona. Não insira senha ou token aqui.")
+            })
             body.addView(c)
         }
     }
