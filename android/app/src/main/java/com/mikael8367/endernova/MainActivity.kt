@@ -599,12 +599,43 @@ class MainActivity : Activity() {
     }
 
     private fun modloaders() {
-        pageHeading("Escolha o Modloader", "Selecione o perfil desejado.")
-        listOf("Forge" to "Mais compatibilidade com mods", "Fabric" to "Leve e moderno", "OptiFine" to "Opções gráficas", "Forge + OptiFine" to "Perfil combinado").forEach {
+        pageHeading("Modloaders", "Escolha e salve o modloader que pretende usar na instância selecionada.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val choices = listOf(
+            "Nenhum (Vanilla)" to "Vanilla",
+            "Forge" to "Forge",
+            "Fabric" to "Fabric",
+            "Quilt" to "Quilt",
+            "NeoForge" to "NeoForge",
+            "OptiFine" to "OptiFine",
+            "Forge + OptiFine" to "Forge + OptiFine",
+            "Fabric + OptiFine" to "Fabric + OptiFine",
+            "LiteLoader (antigo)" to "LiteLoader"
+        )
+        val current = prefs.getString("selected_modloader", "Vanilla") ?: "Vanilla"
+        body.addView(text("Modloader selecionado", 14f, Color.WHITE, true))
+        body.addView(text(current, 18f, mint, true))
+        body.addView(text("A seleção é salva no dispositivo. A instalação real dos modloaders e a compatibilidade por versão ainda precisam ser integradas e testadas.", 12f, muted))
+        choices.forEach { choice ->
             val c = card()
-            c.addView(text("⚒  ${it.first}", 17f, Color.WHITE, true))
-            c.addView(text(it.second, 12f, muted))
-            c.addView(actionButton("Selecionar") { info("${it.first}: instalação ainda não integrada.") })
+            c.addView(text("⚒  ${choice.first}", 16f, Color.WHITE, true))
+            val description = when (choice.second) {
+                "Vanilla" -> "Minecraft sem modloader"
+                "Forge" -> "Grande catálogo de mods, especialmente versões antigas"
+                "Fabric" -> "Modloader leve, comum em versões recentes"
+                "Quilt" -> "Alternativa baseada no ecossistema Fabric"
+                "NeoForge" -> "Ecossistema de mods para versões compatíveis"
+                "OptiFine" -> "Otimização gráfica; disponibilidade varia por versão"
+                "Forge + OptiFine" -> "Combinação que exige versões compatíveis entre si"
+                "Fabric + OptiFine" -> "Compatibilidade limitada; verifique a versão escolhida"
+                else -> "Modloader legado para versões antigas compatíveis"
+            }
+            c.addView(text(description, 12f, muted))
+            c.addView(actionButton(if (current == choice.second) "Selecionado ✓" else "Selecionar") {
+                prefs.edit().putString("selected_modloader", choice.second).apply()
+                showPage("Modloaders")
+                info("${choice.first} salvo como preferência. Isso ainda não instala o modloader.")
+            })
             body.addView(c)
         }
     }
