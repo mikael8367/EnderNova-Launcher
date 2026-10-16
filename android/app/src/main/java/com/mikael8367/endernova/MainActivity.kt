@@ -747,6 +747,23 @@ class MainActivity : Activity() {
             }
             body.addView(toggle)
         }
+        body.addView(actionButton("Testar conexão com a internet") {
+            info("Testando conexão…")
+            Thread {
+                val result = try {
+                    val conn = URL("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json").openConnection()
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 8000
+                    conn.getInputStream().use { it.read() }
+                    "Conexão com o catálogo oficial do Minecraft OK."
+                } catch (e: Exception) {
+                    "Falha de conexão: " + (e.message ?: "verifique a internet")
+                }
+                runOnUiThread { info(result) }
+            }.start()
+        })
+        body.addView(actionButton("Ver contas") { showPage("Contas") })
+        body.addView(actionButton("Ver diagnóstico") { showPage("Diagnóstico") })
         body.addView(actionButton("Refazer configuração inicial") {
             prefs.edit().putBoolean("setup_done", false).apply()
             showPage("Primeiros passos")
@@ -979,8 +996,44 @@ class MainActivity : Activity() {
 
     private fun settingRow(title: String, detail: String) {
         val c = card()
+        c.isClickable = true
+        c.isFocusable = true
         c.addView(text(title, 14f, Color.WHITE, true))
         c.addView(text(detail, 11f, muted))
+        c.addView(text("Toque para abrir", 10f, mint, true))
+        c.setOnClickListener {
+            when (title) {
+                "Aparência" -> {
+                    val options = arrayOf("Verde e preto (padrão)", "Animações ligadas", "Animações desligadas")
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Aparência")
+                        .setItems(options) { _, which ->
+                            val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+                            when (which) {
+                                0 -> info("O tema verde e preto já está ativo.")
+                                1 -> {
+                                    prefs.edit().putBoolean("setting_Animações da interface", true)
+                                        .putBoolean("optimization_Reduzir animações do launcher", false).apply()
+                                    info("Animações ativadas.")
+                                    showPage("Configurações")
+                                }
+                                2 -> {
+                                    prefs.edit().putBoolean("setting_Animações da interface", false)
+                                        .putBoolean("optimization_Reduzir animações do launcher", true).apply()
+                                    info("Animações desativadas.")
+                                    showPage("Configurações")
+                                }
+                            }
+                        }.setNegativeButton("Fechar", null).show()
+                }
+                "Contas" -> showPage("Contas")
+                "Sobre" -> android.app.AlertDialog.Builder(this)
+                    .setTitle("EnderNova Launcher")
+                    .setMessage("Launcher Android para Minecraft Java.\n\nAlgumas funções ainda dependem da integração do motor Java e precisam ser testadas.\n\nVersão experimental.")
+                    .setPositiveButton("OK", null).show()
+                else -> info(detail)
+            }
+        }
         body.addView(c)
     }
 
