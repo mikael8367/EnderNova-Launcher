@@ -33,7 +33,7 @@ class MainActivity : Activity() {
         window.statusBarColor = bg
         window.navigationBarColor = bg
         window.decorView.systemUiVisibility = 0
-        currentPage = "Início"
+        currentPage = if (getSharedPreferences("endernova", MODE_PRIVATE).getBoolean("setup_done", false)) "Início" else "Primeiros passos"
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(bg)
@@ -48,7 +48,7 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(makeBottomNav())
         setContentView(root)
-        showPage("Início")
+        showPage(currentPage)
     }
 
     private fun makeHeader(): View {
@@ -109,6 +109,7 @@ class MainActivity : Activity() {
         currentPage = page
         body.removeAllViews()
         when (page) {
+            "Primeiros passos" -> onboarding()
             "Início" -> home()
             "Instâncias" -> instances()
             "Versões" -> versions()
@@ -129,6 +130,44 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun onboarding() {
+        pageHeading("Primeira configuração", "Escolha as runtimes que deseja preparar.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        listOf("Java 8", "Java 17", "Java 21").forEach { runtime ->
+            val key = "runtime_" + runtime.replace(" ", "")
+            val check = android.widget.CheckBox(this).apply {
+                text = runtime
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                buttonTintList = android.content.res.ColorStateList.valueOf(green)
+                isChecked = prefs.getBoolean(key, runtime == "Java 8")
+                setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean(key, checked).apply() }
+            }
+            body.addView(check)
+        }
+        body.addView(space(10))
+        body.addView(text("Nome do perfil offline", 15f, Color.WHITE, true))
+        val player = android.widget.EditText(this).apply {
+            hint = "Seu nome de jogador"
+            setHintTextColor(muted)
+            setTextColor(Color.WHITE)
+            setSingleLine(true)
+            setText(prefs.getString("player_name", ""))
+            background = rounded(panel, 10, mint)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        body.addView(player, LinearLayout.LayoutParams(-1, dp(48)))
+        body.addView(space(10))
+        val warning = card()
+        warning.addView(text("Download do motor", 15f, Color.WHITE, true))
+        warning.addView(text("A seleção fica salva, mas esta versão ainda não inclui pacotes Java para baixar nem o motor de execução do Minecraft. O jogo não inicia até essa integração ser feita.", 12f, muted))
+        body.addView(warning)
+        body.addView(actionButton("Salvar e continuar") {
+            prefs.edit().putString("player_name", player.text.toString().trim()).putBoolean("setup_done", true).apply()
+            showPage("Início")
+        })
+    }
+
     private fun home() {
         body.addView(text("SEU MUNDO. SEU DESEMPENHO.", 10f, mint, true))
         body.addView(text("Olá, jogador!", 28f, Color.WHITE, true))
@@ -145,8 +184,10 @@ class MainActivity : Activity() {
         metrics.addView(metric("▤", "Instâncias", "1", "Salva localmente"), LinearLayout.LayoutParams(0, -2, 1f))
         body.addView(metrics)
         body.addView(sectionTitle("Minhas Instâncias", "VER TODAS") { showPage("Instâncias") })
-        instanceRow("Minha Série", "Minecraft 1.12.2 • Forge", "▶")
-        instanceRow("Vanilla", "Minecraft 1.20.4 • Vanilla", "▶")
+        val empty = card()
+        empty.addView(text("Nenhuma instância criada", 15f, Color.WHITE, true))
+        empty.addView(text("Escolha uma versão na aba Versões para começar.", 12f, muted))
+        body.addView(empty)
         body.addView(space(8))
         body.addView(actionButton("▶   JOGAR  •  MOTOR AINDA NÃO INTEGRADO") {
             info("O motor Java para Android ainda não está integrado. Este botão não inicia o jogo.")
@@ -160,9 +201,11 @@ class MainActivity : Activity() {
 
     private fun instances() {
         pageHeading("Minhas Instâncias", "Gerencie suas configurações locais.")
-        instanceRow("Minha Série", "Minecraft 1.12.2 • Forge", "⋮")
-        instanceRow("Vanilla", "Minecraft 1.20.4 • Vanilla", "⋮")
-        body.addView(actionButton("+  Nova instância") { info("Criação real de instâncias será ligada ao instalador.") })
+        val empty = card()
+        empty.addView(text("Ainda não há instâncias", 15f, Color.WHITE, true))
+        empty.addView(text("Nenhuma instância foi adicionada automaticamente.", 12f, muted))
+        body.addView(empty)
+        body.addView(actionButton("+  Criar instância a partir de uma versão") { showPage("Versões") })
     }
 
     private fun versions() {
