@@ -4,6 +4,8 @@
     <application
         android:allowBackup="false"
         android:label="EnderNova Launcher"
+        android:icon="@drawable/ic_endernova_icon"
+        android:roundIcon="@drawable/ic_endernova_icon"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
         <activity
