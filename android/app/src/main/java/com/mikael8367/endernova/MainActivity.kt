@@ -131,6 +131,18 @@ class MainActivity : Activity() {
             row.addView(actionButton("Otimização") { showPage("Otimização") }, LinearLayout.LayoutParams(0, dp(42), 1f))
             body.addView(row)
         }
+        // Soft staggered entrance animation for each screen's content.
+        for (index in 0 until body.childCount) {
+            val child = body.getChildAt(index)
+            child.alpha = 0f
+            child.translationY = dp(10).toFloat()
+            child.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setStartDelay((index * 35L).coerceAtMost(280L))
+                .setDuration(240L)
+                .start()
+        }
     }
 
     private fun onboarding() {
