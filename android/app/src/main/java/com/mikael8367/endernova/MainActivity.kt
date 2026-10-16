@@ -739,11 +739,55 @@ class MainActivity : Activity() {
     }
 
     private fun optimization() {
-        pageHeading("Otimização de Performance", "Opções de interface; ainda não aplicadas ao jogo.")
-        listOf("FPS Booster", "Menos animações", "Texturas otimizadas").forEach { settingRow(it, "Preferência demonstrativa") }
-        settingRow("Limite de FPS", "60 FPS • preferência visual")
-        settingRow("Renderização", "Rápido • preferência visual")
-        body.addView(actionButton("Aplicar configurações") { info("Estas opções ainda não alteram o Minecraft.") })
+        pageHeading("Otimização", "Salva preferências para uso futuro; não altera o jogo até o motor estar integrado.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        listOf(
+            "Reduzir animações do launcher" to "Menos movimento na interface",
+            "Modo econômico" to "Preferência para reduzir efeitos visuais quando suportado",
+            "Limitar FPS a 60" to "Limite desejado para o jogo",
+            "Reduzir partículas" to "Preferência gráfica para o jogo",
+            "Distância de renderização baixa" to "Preferência para economizar memória"
+        ).forEach { item ->
+            val key = "optimization_" + item.first
+            val toggle = android.widget.Switch(this).apply {
+                text = item.first
+                setTextColor(Color.WHITE)
+                isChecked = prefs.getBoolean(key, item.first == "Reduzir animações do launcher")
+                setOnCheckedChangeListener { _, checked ->
+                    prefs.edit().putBoolean(key, checked).apply()
+                    if (item.first == "Reduzir animações do launcher") {
+                        prefs.edit().putBoolean("setting_Animações da interface", !checked).apply()
+                    }
+                }
+            }
+            body.addView(toggle)
+            body.addView(text(item.second, 11f, muted))
+        }
+        body.addView(actionButton("Ver arquivos de mods baixados") { showDownloadedMods() })
+    }
+
+    private fun showDownloadedMods() {
+        val root = File(filesDir, ".minecraft/mods")
+        val mods = root.walkTopDown().filter { it.isFile && it.extension.equals("jar", true) }.toList()
+        body.removeAllViews()
+        pageHeading("Mods baixados", mods.size.toString() + " arquivos JAR guardados")
+        body.addView(actionButton("Voltar à otimização") { showPage("Otimização") })
+        if (mods.isEmpty()) { body.addView(text("Nenhum mod baixado ainda.", 13f, muted)); return }
+        mods.forEach { file ->
+            val c = card()
+            c.addView(text(file.name, 14f, Color.WHITE, true))
+            c.addView(text(file.parentFile?.name ?: "", 11f, muted))
+            c.addView(actionButton("Remover arquivo") {
+                android.app.AlertDialog.Builder(this).setTitle("Remover mod?")
+                    .setMessage("O arquivo será removido do armazenamento do launcher.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Remover") { _, _ ->
+                        if (file.delete()) info("Arquivo removido.") else info("Não foi possível remover o arquivo.")
+                        showDownloadedMods()
+                    }.show()
+            })
+            body.addView(c)
+        }
     }
 
     private fun pageHeading(title: String, subtitle: String) {
