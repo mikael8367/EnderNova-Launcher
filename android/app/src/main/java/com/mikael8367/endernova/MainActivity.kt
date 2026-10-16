@@ -230,12 +230,105 @@ class MainActivity : Activity() {
     }
 
     private fun instances() {
-        pageHeading("Minhas Instâncias", "Gerencie suas configurações locais.")
-        val empty = card()
-        empty.addView(text("Ainda não há instâncias", 15f, Color.WHITE, true))
-        empty.addView(text("Nenhuma instância foi adicionada automaticamente.", 12f, muted))
-        body.addView(empty)
-        body.addView(actionButton("+  Criar instância a partir de uma versão") { showPage("Versões") })
+        pageHeading("Minhas Instâncias", "Perfis separados por versão. A inicialização do jogo ainda depende do motor Java.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        fun readInstances(): org.json.JSONArray = try {
+            org.json.JSONArray(prefs.getString("instances_json", "[]") ?: "[]")
+        } catch (_: Exception) { org.json.JSONArray() }
+
+        body.addView(actionButton("+ Criar instância") {
+            val versions = prefs.getString("installed_versions_json", "[]") ?: "[]"
+            val installed = try { org.json.JSONArray(versions) } catch (_: Exception) { org.json.JSONArray() }
+            val selected = prefs.getString("selected_version", null)
+            val nameInput = android.widget.EditText(this).apply {
+                hint = "Nome da instância"
+                setSingleLine(true)
+                setTextColor(Color.WHITE)
+                setHintTextColor(muted)
+                background = rounded(panel, 10, mint)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }
+            val versionInput = android.widget.EditText(this).apply {
+                hint = "Versão (ex.: 1.12.2)"
+                setSingleLine(true)
+                setTextColor(Color.WHITE)
+                setHintTextColor(muted)
+                setText(selected ?: "")
+                background = rounded(panel, 10, mint)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }
+            val contentBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(8), dp(18), dp(4))
+                addView(nameInput)
+                addView(space(8))
+                addView(versionInput)
+                addView(text("Use uma versão já baixada para evitar downloads duplicados.", 11f, muted))
+            }
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Nova instância")
+                .setView(contentBox)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Criar") { _, _ ->
+                    val name = nameInput.text.toString().trim()
+                    val version = versionInput.text.toString().trim()
+                    if (name.isBlank() || !version.matches(Regex("^[A-Za-z0-9._-]{1,40}$"))) {
+                        info("Informe um nome e uma versão válida.")
+                    } else {
+                        val all = readInstances()
+                        val duplicate = (0 until all.length()).any { all.optJSONObject(it)?.optString("name")?.equals(name, true) == true }
+                        if (duplicate) {
+                            info("Já existe uma instância com esse nome.")
+                        } else {
+                            all.put(JSONObject().put("id", java.util.UUID.randomUUID().toString())
+                                .put("name", name).put("version", version).put("createdAt", System.currentTimeMillis()))
+                            prefs.edit().putString("instances_json", all.toString()).apply()
+                            info("Instância criada. Para jogar, ainda falta integrar o motor Java.")
+                            showPage("Instâncias")
+                        }
+                    }
+                }.show()
+        })
+
+        val all = readInstances()
+        if (all.length() == 0) {
+            val empty = card()
+            empty.addView(text("Ainda não há instâncias", 15f, Color.WHITE, true))
+            empty.addView(text("Crie um perfil para organizar o nome e a versão do Minecraft.", 12f, muted))
+            body.addView(empty)
+            return
+        }
+        for (i in 0 until all.length()) {
+            val instance = all.optJSONObject(i) ?: continue
+            val id = instance.optString("id")
+            val name = instance.optString("name", "Instância")
+            val version = instance.optString("version", "desconhecida")
+            val c = card()
+            c.addView(text(name, 16f, Color.WHITE, true))
+            c.addView(text("Minecraft $version", 12f, mint, true))
+            c.addView(text("Perfil salvo neste dispositivo • inicialização ainda não integrada", 10f, muted))
+            c.addView(actionButton("Definir versão selecionada") {
+                prefs.edit().putString("selected_version", version).putString("selected_instance_id", id).apply()
+                info("Versão $version selecionada.")
+            })
+            c.addView(actionButton("Excluir instância") {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Excluir $name?")
+                    .setMessage("Isso remove apenas o perfil da instância, não apaga os arquivos baixados.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Excluir") { _, _ ->
+                        val updated = org.json.JSONArray()
+                        val current = readInstances()
+                        for (j in 0 until current.length()) {
+                            val item = current.optJSONObject(j) ?: continue
+                            if (item.optString("id") != id) updated.put(item)
+                        }
+                        prefs.edit().putString("instances_json", updated.toString()).apply()
+                        showPage("Instâncias")
+                    }.show()
+            })
+            body.addView(c)
+        }
     }
 
     private fun versions() {
