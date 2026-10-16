@@ -39,7 +39,7 @@ class MainActivity : Activity() {
             setBackgroundColor(bg)
         }
         root.addView(makeHeader())
-        val scroll = ScrollView(this).apply { fillViewport = true }
+        val scroll = ScrollView(this).apply { setFillViewport(true) }
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(18))
