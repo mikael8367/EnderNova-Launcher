@@ -1242,7 +1242,7 @@ class MainActivity : Activity() {
         setStroke(dp(1), Color.rgb(26, 91, 61))
     }
 
-    private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {    private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {
+    private fun text(value: String, size: Float, color: Int, bold: Boolean = false): TextView = TextView(this).apply {
         text = value
         textSize = size
         setTextColor(color)
