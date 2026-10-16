@@ -135,16 +135,23 @@ class MainActivity : Activity() {
             body.addView(row)
         }
         // Soft staggered entrance animation for each screen's content.
+        val animationsEnabled = getSharedPreferences("endernova", MODE_PRIVATE)
+            .getBoolean("setting_Animações da interface", true)
         for (index in 0 until body.childCount) {
             val child = body.getChildAt(index)
-            child.alpha = 0f
-            child.translationY = dp(10).toFloat()
-            child.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .setStartDelay((index * 35L).coerceAtMost(280L))
-                .setDuration(240L)
-                .start()
+            if (animationsEnabled) {
+                child.alpha = 0f
+                child.translationY = dp(10).toFloat()
+                child.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setStartDelay((index * 35L).coerceAtMost(280L))
+                    .setDuration(240L)
+                    .start()
+            } else {
+                child.alpha = 1f
+                child.translationY = 0f
+            }
         }
     }
 
@@ -197,9 +204,12 @@ class MainActivity : Activity() {
         device.addView(text("Arquitetura ARM64  •  Interface de demonstração", 11f, muted))
         body.addView(device)
         val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        metrics.addView(metric("◉", "RAM configurada", "2 GB", "3,7 GB total"), LinearLayout.LayoutParams(0, -2, 1f))
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val ramMb = prefs.getInt("ram_mb", 2048)
+        val instanceCount = if (prefs.getString("selected_version", null) != null) 1 else 0
+        metrics.addView(metric("◉", "RAM configurada", String.format("%.1f GB", ramMb / 1024.0), "Limite configurado"), LinearLayout.LayoutParams(0, -2, 1f))
         metrics.addView(space(10), LinearLayout.LayoutParams(dp(10), 1))
-        metrics.addView(metric("▤", "Instâncias", "1", "Salva localmente"), LinearLayout.LayoutParams(0, -2, 1f))
+        metrics.addView(metric("▤", "Versão selecionada", instanceCount.toString(), if (instanceCount == 1) prefs.getString("selected_version", "") ?: "" else "Nenhuma"), LinearLayout.LayoutParams(0, -2, 1f))
         body.addView(metrics)
         body.addView(sectionTitle("Minhas Instâncias", "VER TODAS") { showPage("Instâncias") })
         val empty = card()
@@ -528,9 +538,32 @@ class MainActivity : Activity() {
             showPage("Primeiros passos")
         })
         body.addView(actionButton("Limpar preferências") {
-            prefs.edit().clear().apply()
-            info("Preferências locais apagadas.")
-            showPage("Configurações")
+            val confirm = android.widget.CheckBox(this).apply {
+                text = "Também apagar preferências e perfil local"
+                setTextColor(Color.WHITE)
+                buttonTintList = android.content.res.ColorStateList.valueOf(green)
+                isChecked = false
+            }
+            val dialogContent = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(8), dp(20), dp(4))
+                addView(text("Isso remove nome e configurações do launcher. Os arquivos baixados não serão apagados.", 14f, Color.WHITE))
+                addView(confirm)
+            }
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Confirmar limpeza")
+                .setView(dialogContent)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Limpar") { _, _ ->
+                    if (confirm.isChecked) {
+                        prefs.edit().clear().apply()
+                        info("Preferências locais apagadas.")
+                    } else {
+                        info("Marque a confirmação para apagar as preferências.")
+                    }
+                    showPage("Configurações")
+                }
+                .show()
         })
         settingRow("Aparência", "Tema verde e preto")
         settingRow("Contas", "Offline, Microsoft e Ely.by")
