@@ -493,7 +493,17 @@ class MainActivity : Activity() {
                     }
                 }
 
-                getSharedPreferences("endernova", MODE_PRIVATE).edit()
+                val versionPrefs = getSharedPreferences("endernova", MODE_PRIVATE)
+                val installedVersions = try {
+                    org.json.JSONArray(versionPrefs.getString("installed_versions_json", "[]") ?: "[]")
+                } catch (_: Exception) { org.json.JSONArray() }
+                var alreadyListed = false
+                for (i in 0 until installedVersions.length()) {
+                    if (installedVersions.optString(i) == versionId) alreadyListed = true
+                }
+                if (!alreadyListed) installedVersions.put(versionId)
+                versionPrefs.edit()
+                    .putString("installed_versions_json", installedVersions.toString())
                     .putString("selected_version", versionId)
                     .putBoolean("version_downloaded_" + versionId, true).apply()
                 runOnUiThread {
