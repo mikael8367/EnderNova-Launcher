@@ -339,17 +339,107 @@ class MainActivity : Activity() {
                     tempJar.delete()
                 }
                 jsonFile.writeText(metadataText)
+
+                // Download version libraries and assets using Mojang's official metadata.
+                val minecraftRoot = File(filesDir, ".minecraft")
+                val librariesRoot = File(minecraftRoot, "libraries")
+                val libraries = metadata.optJSONArray("libraries")
+                if (libraries != null) {
+                    for (i in 0 until libraries.length()) {
+                        val lib = libraries.optJSONObject(i) ?: continue
+                        val downloads = lib.optJSONObject("downloads") ?: continue
+                        val artifact = downloads.optJSONObject("artifact") ?: continue
+                        val relativePath = artifact.optString("path", "")
+                        val artifactUrl = artifact.optString("url", "")
+                        if (relativePath.isBlank() || artifactUrl.isBlank()) continue
+                        val destination = File(librariesRoot, relativePath)
+                        if (!destination.exists() || !isVerifiedFile(destination, artifact.optString("sha1", ""), artifact.optLong("size", -1L))) {
+                            downloadVerified(artifactUrl, destination, artifact.optString("sha1", ""), artifact.optLong("size", -1L))
+                        }
+                    }
+                }
+
+                val assetIndex = metadata.optJSONObject("assetIndex")
+                if (assetIndex != null) {
+                    val assetId = assetIndex.getString("id")
+                    val indexesDir = File(minecraftRoot, "assets/indexes")
+                    indexesDir.mkdirs()
+                    val indexFile = File(indexesDir, "$assetId.json")
+                    val indexUrl = assetIndex.getString("url")
+                    if (!indexFile.exists() || !isVerifiedFile(indexFile, assetIndex.optString("sha1", ""), assetIndex.optLong("size", -1L))) {
+                        downloadVerified(indexUrl, indexFile, assetIndex.optString("sha1", ""), assetIndex.optLong("size", -1L))
+                    }
+                    val objects = JSONObject(indexFile.readText()).optJSONObject("objects")
+                    val objectRoot = File(minecraftRoot, "assets/objects")
+                    if (objects != null) {
+                        val keys = objects.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            val obj = objects.getJSONObject(key)
+                            val hash = obj.getString("hash")
+                            if (hash.length < 2) continue
+                            val relative = hash.substring(0, 2) + "/" + hash
+                            val destination = File(objectRoot, relative)
+                            val size = obj.optLong("size", -1L)
+                            if (!destination.exists() || !isVerifiedFile(destination, hash, size)) {
+                                downloadVerified("https://resources.download.minecraft.net/$relative", destination, hash, size)
+                            }
+                        }
+                    }
+                }
+
                 getSharedPreferences("endernova", MODE_PRIVATE).edit()
                     .putString("selected_version", versionId)
                     .putBoolean("version_downloaded_" + versionId, true).apply()
                 runOnUiThread {
-                    info("Minecraft " + versionId + ": cliente e metadados oficiais baixados e verificados. Bibliotecas e assets ainda precisam ser integrados.")
+                    info("Minecraft " + versionId + ": cliente, metadados, bibliotecas e assets baixados e verificados. O motor JVM e a preparação específica de natives ainda não estão integrados.")
                     showPage("Versões")
                 }
             } catch (e: Exception) {
                 runOnUiThread { info("Falha ao baixar " + versionId + ": " + (e.message ?: "erro de rede")) }
             }
         }.start()
+    }
+
+    private fun isVerifiedFile(file: File, expectedSha1: String, expectedSize: Long): Boolean {
+        if (!file.isFile()) return false
+        if (expectedSize > 0L && file.length() != expectedSize) return false
+        if (expectedSha1.isBlank()) return expectedSize > 0L && file.length() == expectedSize
+        val digest = MessageDigest.getInstance("SHA-1")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+        return actual.equals(expectedSha1, ignoreCase = true)
+    }
+
+    private fun downloadVerified(address: String, destination: File, expectedSha1: String, expectedSize: Long) {
+        destination.parentFile?.mkdirs()
+        val temporary = File(destination.parentFile, destination.name + ".part")
+        try {
+            val connection = URL(address).openConnection()
+            connection.connectTimeout = 20000
+            connection.readTimeout = 120000
+            connection.setRequestProperty("User-Agent", "EnderNova-Launcher")
+            connection.getInputStream().use { input ->
+                temporary.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (!isVerifiedFile(temporary, expectedSha1, expectedSize)) {
+                throw IllegalStateException("Verificação do arquivo falhou: " + destination.name)
+            }
+            if (!temporary.renameTo(destination)) {
+                temporary.copyTo(destination, overwrite = true)
+                temporary.delete()
+            }
+        } catch (e: Exception) {
+            temporary.delete()
+            throw e
+        }
     }
 
     private fun modloaders() {
