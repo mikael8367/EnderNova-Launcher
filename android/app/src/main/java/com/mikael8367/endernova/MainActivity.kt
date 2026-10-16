@@ -332,12 +332,21 @@ class MainActivity : Activity() {
     }
 
     private fun versions() {
-        pageHeading("Versões do Minecraft", "Buscando o manifesto oficial de versões…")
+        pageHeading("Versões do Minecraft", "Escolha o canal e depois selecione a versão para baixar.")
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
         body.addView(actionButton("Carregar / atualizar versões") { loadVersions() })
         loadVersions()
     }
 
     private fun loadVersions() {
+        val prefs = getSharedPreferences("endernova", MODE_PRIVATE)
+        val channel = prefs.getString("version_channel", "release") ?: "release"
+        val channelName = when (channel) {
+            "snapshot" -> "Snapshot"
+            "old_beta" -> "Beta"
+            "old_alpha" -> "Alfa"
+            else -> "Release"
+        }
         Thread {
             try {
                 val conn = URL("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json").openConnection()
@@ -348,29 +357,47 @@ class MainActivity : Activity() {
                 val versions = ArrayList<Pair<String, String>>()
                 for (i in 0 until list.length()) {
                     val v = list.getJSONObject(i)
-                    versions.add(v.getString("id") to v.getString("type"))
+                    if (v.optString("type") == channel) versions.add(v.getString("id") to v.optString("type", channel))
                 }
                 runOnUiThread {
                     if (currentPage != "Versões") return@runOnUiThread
                     body.removeAllViews()
-                    pageHeading("Versões do Minecraft", "${versions.size} versões no manifesto oficial")
+                    pageHeading("Versões • $channelName", "${versions.size} versões encontradas")
+                    val channels = listOf("Release" to "release", "Snapshot" to "snapshot", "Beta" to "old_beta", "Alfa" to "old_alpha")
+                    val picker = android.widget.Spinner(this).apply {
+                        adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, channels.map { it.first })
+                        setSelection(channels.indexOfFirst { it.second == channel }.coerceAtLeast(0))
+                        onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                                val next = channels[position].second
+                                if (next != channel) {
+                                    prefs.edit().putString("version_channel", next).apply()
+                                    loadVersions()
+                                }
+                            }
+                        }
+                    }
+                    body.addView(text("Tipo de versão", 14f, Color.WHITE, true))
+                    body.addView(picker, LinearLayout.LayoutParams(-1, dp(48)))
                     body.addView(actionButton("Atualizar catálogo") { loadVersions() })
+                    if (versions.isEmpty()) body.addView(text("Não há versões desse tipo no manifesto oficial.", 12f, muted))
                     versions.forEach { v ->
                         val c = card()
                         c.addView(text("Minecraft ${v.first}", 14f, Color.WHITE, true))
-                        c.addView(text(v.second, 11f, muted))
-                        c.addView(actionButton("Baixar versão") {
-                            getSharedPreferences("endernova", MODE_PRIVATE).edit().putString("selected_version", v.first).apply()
+                        c.addView(text(channelName, 11f, muted))
+                        c.addView(actionButton("Selecionar e baixar") {
+                            prefs.edit().putString("selected_version", v.first).apply()
                             downloadMinecraftVersion(v.first)
                         })
                         body.addView(c)
                     }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 runOnUiThread {
                     if (currentPage == "Versões") {
                         body.removeAllViews()
-                        pageHeading("Versões do Minecraft", "Não foi possível carregar o manifesto. Verifique a internet.")
+                        pageHeading("Versões do Minecraft", "Não foi possível carregar o catálogo. Verifique a internet.")
                         body.addView(actionButton("Tentar novamente") { loadVersions() })
                     }
                 }
