@@ -15,6 +15,8 @@ import android.widget.TextView
 import android.widget.SeekBar
 import org.json.JSONObject
 import java.net.URL
+import java.io.File
+import java.util.zip.ZipInputStream
 
 /**
  * EnderNova Android UI prototype. It mirrors the green-on-black dashboard concept.
@@ -323,11 +325,21 @@ class MainActivity : Activity() {
         body.addView(space(10))
         listOf("Java 8", "Java 17", "Java 21").forEach { runtime ->
             val key = "runtime_" + runtime.replace(" ", "")
+            val folder = File(filesDir, "runtimes/java" + runtime.removePrefix("Java "))
+            val ready = File(folder, ".download_complete").exists()
+            val c = card()
+            c.addView(text("$runtime  •  " + if (ready) "Baixado" else "Não instalado", 15f, if (ready) mint else Color.WHITE, true))
+            c.addView(text("Runtime Android ARM64 • armazenado no app", 11f, muted))
+            c.addView(actionButton(if (ready) "Baixar novamente" else "Baixar $runtime") {
+                downloadRuntime(runtime)
+            })
+            body.addView(c)
             val check = android.widget.CheckBox(this).apply {
-                text = "Usar $runtime"
+                text = "Preferir $runtime para versões compatíveis"
                 setTextColor(Color.WHITE)
                 buttonTintList = android.content.res.ColorStateList.valueOf(green)
                 isChecked = prefs.getBoolean(key, runtime == "Java 8")
+                isEnabled = ready
                 setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean(key, checked).apply() }
             }
             body.addView(check)
@@ -353,6 +365,65 @@ class MainActivity : Activity() {
         settingRow("Aparência", "Tema verde e preto")
         settingRow("Contas", "Offline, Microsoft e Ely.by")
         settingRow("Sobre", "EnderNova Launcher • Mikael Dev")
+    }
+
+    private fun downloadRuntime(runtime: String) {
+        val version = runtime.removePrefix("Java ")
+        val artifact = when (version) {
+            "8" -> "jre8-pojav"
+            "17" -> "jre17-pojav"
+            "21" -> "jre21-pojav"
+            else -> { info("Runtime não suportada."); return }
+        }
+        val workflow = if (version == "8") "buildjre8" else "buildjre17-21"
+        val url = "https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/$workflow/$artifact.zip"
+        val target = File(filesDir, "runtimes/java$version")
+        val temp = File(cacheDir, "$artifact.zip.part")
+        info("Baixando Java $version para Android. Mantenha a internet conectada.")
+        Thread {
+            try {
+                val conn = URL(url).openConnection()
+                conn.connectTimeout = 20000
+                conn.readTimeout = 60000
+                conn.setRequestProperty("User-Agent", "EnderNova-Launcher")
+                conn.getInputStream().use { input ->
+                    temp.parentFile?.mkdirs()
+                    temp.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (!temp.exists() || temp.length() < 1024 * 1024) throw IllegalStateException("O pacote recebido está incompleto.")
+                val staging = File(filesDir, "runtimes/java$version-staging")
+                staging.deleteRecursively()
+                staging.mkdirs()
+                ZipInputStream(temp.inputStream().buffered()).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        val out = File(staging, entry.name)
+                        if (!out.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
+                            throw SecurityException("Caminho inválido dentro do pacote.")
+                        }
+                        if (entry.isDirectory) out.mkdirs() else {
+                            out.parentFile?.mkdirs()
+                            out.outputStream().use { output -> zip.copyTo(output) }
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+                if (staging.listFiles().isNullOrEmpty()) throw IllegalStateException("O pacote não contém arquivos.")
+                target.deleteRecursively()
+                if (!staging.renameTo(target)) throw IllegalStateException("Não foi possível guardar o runtime.")
+                File(target, ".download_complete").writeText("source=nightly.link\nversion=$version\n")
+                runOnUiThread {
+                    info("Java $version baixado e guardado no app. A integração para executar a JVM ainda precisa ser feita.")
+                    showPage("Configurações")
+                }
+            } catch (e: Exception) {
+                temp.delete()
+                runOnUiThread { info("Falha ao baixar Java $version: ${e.message ?: "erro de rede"}. Tente novamente mais tarde.") }
+            } finally {
+                temp.delete()
+            }
+        }.start()
     }
 
     private fun optimization() {
