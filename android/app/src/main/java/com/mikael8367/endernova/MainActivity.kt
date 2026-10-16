@@ -15,6 +15,7 @@ import android.widget.TextView
 import android.widget.SeekBar
 import org.json.JSONObject
 import java.net.URL
+import java.security.MessageDigest
 import java.io.File
 import java.util.zip.ZipInputStream
 
@@ -253,9 +254,9 @@ class MainActivity : Activity() {
                         val c = card()
                         c.addView(text("Minecraft ${v.first}", 14f, Color.WHITE, true))
                         c.addView(text(v.second, 11f, muted))
-                        c.addView(actionButton("Selecionar") {
+                        c.addView(actionButton("Baixar versão") {
                             getSharedPreferences("endernova", MODE_PRIVATE).edit().putString("selected_version", v.first).apply()
-                            info("Versão ${v.first} selecionada. A instalação dos arquivos do jogo ainda não está integrada.")
+                            downloadMinecraftVersion(v.first)
                         })
                         body.addView(c)
                     }
@@ -268,6 +269,85 @@ class MainActivity : Activity() {
                         body.addView(actionButton("Tentar novamente") { loadVersions() })
                     }
                 }
+            }
+        }.start()
+    }
+
+
+    private fun downloadMinecraftVersion(versionId: String) {
+        info("Preparando download do Minecraft " + versionId + "…")
+        Thread {
+            try {
+                fun fetchText(address: String): String {
+                    val conn = URL(address).openConnection()
+                    conn.connectTimeout = 20000
+                    conn.readTimeout = 60000
+                    conn.setRequestProperty("User-Agent", "EnderNova-Launcher")
+                    return conn.getInputStream().bufferedReader().use { it.readText() }
+                }
+                val manifest = JSONObject(fetchText("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"))
+                val versions = manifest.getJSONArray("versions")
+                var metadataUrl: String? = null
+                for (i in 0 until versions.length()) {
+                    val item = versions.getJSONObject(i)
+                    if (item.getString("id") == versionId) {
+                        metadataUrl = item.getString("url")
+                        break
+                    }
+                }
+                val selectedUrl = metadataUrl ?: throw IllegalStateException("Versão não encontrada no manifesto oficial.")
+                val metadataText = fetchText(selectedUrl)
+                val metadata = JSONObject(metadataText)
+                val client = metadata.getJSONObject("downloads").getJSONObject("client")
+                val jarUrl = client.getString("url")
+                val expectedSha1 = client.optString("sha1", "")
+                val expectedSize = client.optLong("size", -1L)
+                val versionDir = File(filesDir, ".minecraft/versions/" + versionId)
+                versionDir.mkdirs()
+                val jsonFile = File(versionDir, versionId + ".json")
+                val jarFile = File(versionDir, versionId + ".jar")
+                val tempJar = File(versionDir, versionId + ".jar.part")
+                val connection = URL(jarUrl).openConnection()
+                connection.connectTimeout = 20000
+                connection.readTimeout = 120000
+                connection.setRequestProperty("User-Agent", "EnderNova-Launcher")
+                connection.getInputStream().use { input ->
+                    tempJar.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (expectedSize > 0 && tempJar.length() != expectedSize) {
+                    tempJar.delete()
+                    throw IllegalStateException("O tamanho do arquivo não confere; tente novamente.")
+                }
+                if (expectedSha1.isNotBlank()) {
+                    val digest = MessageDigest.getInstance("SHA-1")
+                    tempJar.inputStream().use { input ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            digest.update(buffer, 0, n)
+                        }
+                    }
+                    val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+                    if (!actual.equals(expectedSha1, ignoreCase = true)) {
+                        tempJar.delete()
+                        throw IllegalStateException("Verificação SHA-1 falhou; arquivo rejeitado.")
+                    }
+                }
+                if (!tempJar.renameTo(jarFile)) {
+                    tempJar.copyTo(jarFile, overwrite = true)
+                    tempJar.delete()
+                }
+                jsonFile.writeText(metadataText)
+                getSharedPreferences("endernova", MODE_PRIVATE).edit()
+                    .putString("selected_version", versionId)
+                    .putBoolean("version_downloaded_" + versionId, true).apply()
+                runOnUiThread {
+                    info("Minecraft " + versionId + ": cliente e metadados oficiais baixados e verificados. Bibliotecas e assets ainda precisam ser integrados.")
+                    showPage("Versões")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { info("Falha ao baixar " + versionId + ": " + (e.message ?: "erro de rede")) }
             }
         }.start()
     }
