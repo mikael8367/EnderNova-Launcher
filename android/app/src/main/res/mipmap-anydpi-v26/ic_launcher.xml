@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/endernova_icon_background" />
+    <foreground android:drawable="@drawable/ic_endernova_icon" />
+    <monochrome android:drawable="@drawable/ic_endernova_icon" />
+</adaptive-icon>
