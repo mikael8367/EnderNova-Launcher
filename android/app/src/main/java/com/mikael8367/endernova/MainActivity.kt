@@ -881,56 +881,82 @@ class MainActivity : Activity() {
             "21" -> "jre21-pojav"
             else -> { info("Runtime não suportada."); return }
         }
-        val workflow = if (version == "8") "buildjre8" else "buildjre17-21"
-        val url = "https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/$workflow/$artifact.zip"
+        // "build" is the workflow name; buildjre8/buildjre17-21 are branch names.
+        val branch = if (version == "8") "buildjre8" else "buildjre17-21"
+        val urls = listOf(
+            "https://nightly.link/TeamPojavLauncher/pojav-android-openjdk-build-multiarch/workflows/build/$branch/$artifact.zip",
+            "https://nightly.link/PojavLauncherTeam/android-openjdk-build-multiarch/workflows/build/$branch/$artifact.zip"
+        )
         val target = File(filesDir, "runtimes/java$version")
         val temp = File(cacheDir, "$artifact.zip.part")
-        info("Baixando Java $version para Android. Mantenha a internet conectada.")
+        val staging = File(filesDir, "runtimes/java$version-staging")
+        info("Baixando Java $version. O pacote pode ser grande; mantenha a internet conectada.")
         Thread {
             try {
-                val conn = URL(url).openConnection()
-                conn.connectTimeout = 20000
-                conn.readTimeout = 60000
-                conn.setRequestProperty("User-Agent", "EnderNova-Launcher")
-                conn.getInputStream().use { input ->
-                    temp.parentFile?.mkdirs()
-                    temp.outputStream().use { output -> input.copyTo(output) }
-                }
-                if (!temp.exists() || temp.length() < 1024 * 1024) throw IllegalStateException("O pacote recebido está incompleto.")
-                val staging = File(filesDir, "runtimes/java$version-staging")
-                staging.deleteRecursively()
-                staging.mkdirs()
-                ZipInputStream(temp.inputStream().buffered()).use { zip ->
-                    var entry = zip.nextEntry
-                    while (entry != null) {
-                        val out = File(staging, entry.name)
-                        if (!out.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
-                            throw SecurityException("Caminho inválido dentro do pacote.")
+                temp.parentFile?.mkdirs()
+                var lastError: Exception? = null
+                var downloaded = false
+                for (url in urls) {
+                    var conn: java.net.HttpURLConnection? = null
+                    try {
+                        temp.delete()
+                        conn = URL(url).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 25000
+                        conn.readTimeout = 120000
+                        conn.instanceFollowRedirects = true
+                        conn.setRequestProperty("User-Agent", "EnderNova-Launcher/1.0")
+                        conn.setRequestProperty("Accept", "application/zip, application/octet-stream, */*")
+                        val code = conn.responseCode
+                        if (code !in 200..299) throw IllegalStateException("servidor respondeu HTTP $code")
+                        if ((conn.contentType ?: "").lowercase().contains("text/html")) throw IllegalStateException("servidor retornou página web em vez do ZIP")
+                        conn.inputStream.use { input ->
+                            temp.outputStream().buffered().use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) { val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+                            }
                         }
+                        if (!temp.isFile || temp.length() < 1024 * 1024) throw IllegalStateException("ZIP incompleto (${temp.length()} bytes)")
+                        java.util.zip.ZipFile(temp).use { zip ->
+                            if (!zip.entries().asSequence().any { !it.isDirectory }) throw IllegalStateException("ZIP vazio")
+                        }
+                        downloaded = true
+                        break
+                    } catch (e: Exception) {
+                        lastError = e
+                        temp.delete()
+                    } finally { conn?.disconnect() }
+                }
+                if (!downloaded) throw IllegalStateException("não foi possível obter o pacote nos servidores. " + (lastError?.message ?: "erro de rede"))
+                staging.deleteRecursively()
+                if (!staging.mkdirs() && !staging.isDirectory) throw IllegalStateException("não foi possível criar pasta temporária")
+                java.util.zip.ZipFile(temp).use { zip ->
+                    val entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        val out = File(staging, entry.name)
+                        if (!out.canonicalPath.startsWith(staging.canonicalPath + File.separator)) throw SecurityException("caminho inválido dentro do ZIP")
                         if (entry.isDirectory) out.mkdirs() else {
                             out.parentFile?.mkdirs()
-                            out.outputStream().use { output -> zip.copyTo(output) }
+                            zip.getInputStream(entry).use { input -> out.outputStream().buffered().use { output -> input.copyTo(output) } }
                         }
-                        zip.closeEntry()
-                        entry = zip.nextEntry
                     }
                 }
-                if (staging.listFiles().isNullOrEmpty()) throw IllegalStateException("O pacote não contém arquivos.")
-                target.deleteRecursively()
-                if (!staging.renameTo(target)) throw IllegalStateException("Não foi possível guardar o runtime.")
-                File(target, ".download_complete").writeText("source=nightly.link\nversion=$version\n")
-                runOnUiThread {
-                    info("Java $version baixado e guardado no app. A integração para executar a JVM ainda precisa ser feita.")
-                    showPage("Configurações")
-                }
+                if (staging.listFiles().isNullOrEmpty()) throw IllegalStateException("pacote extraído vazio")
+                val backup = File(filesDir, "runtimes/java$version-backup")
+                backup.deleteRecursively()
+                if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("não foi possível guardar runtime anterior")
+                if (!staging.renameTo(target)) { if (backup.exists()) backup.renameTo(target); throw IllegalStateException("não foi possível guardar runtime baixada") }
+                backup.deleteRecursively()
+                File(target, ".download_complete").writeText("source=nightly.link\\nversion=$version\\n")
+                runOnUiThread { info("Pacote Java $version baixado. O motor de execução ainda precisa de integração."); showPage("Configurações") }
             } catch (e: Exception) {
+                staging.deleteRecursively()
                 temp.delete()
-                runOnUiThread { info("Falha ao baixar Java $version: ${e.message ?: "erro de rede"}. Tente novamente mais tarde.") }
-            } finally {
-                temp.delete()
-            }
+                runOnUiThread { info("Falha no download do Java $version: " + (e.message ?: "erro de rede") + ". Confira a conexão e tente novamente.") }
+            } finally { temp.delete() }
         }.start()
     }
+
 
     private fun optimization() {
         pageHeading("Otimização", "Salva preferências para uso futuro; não altera o jogo até o motor estar integrado.")
