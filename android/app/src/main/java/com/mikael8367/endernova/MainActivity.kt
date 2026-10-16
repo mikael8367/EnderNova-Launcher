@@ -124,6 +124,7 @@ class MainActivity : Activity() {
             "Loja de Mods" -> mods()
             "Configurações" -> settings()
             "Otimização" -> optimization()
+            "Diagnóstico" -> crashDiagnostics()
             else -> home()
         }
         // Add a compact navigation link to the two additional screens represented in the reference.
@@ -133,6 +134,7 @@ class MainActivity : Activity() {
             row.addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
             row.addView(actionButton("Otimização") { showPage("Otimização") }, LinearLayout.LayoutParams(0, dp(42), 1f))
             body.addView(row)
+            body.addView(actionButton("Ver erros e copiar relatório") { showPage("Diagnóstico") })
         }
         // Soft staggered entrance animation for each screen's content.
         val animationsEnabled = getSharedPreferences("endernova", MODE_PRIVATE)
@@ -788,6 +790,37 @@ class MainActivity : Activity() {
             })
             body.addView(c)
         }
+    }
+
+    private fun crashDiagnostics() {
+        pageHeading("Diagnóstico e crashes", "Relatórios locais do launcher e do Minecraft, quando existirem.")
+        val root = File(filesDir, ".minecraft")
+        val reports = File(root, "crash-reports")
+        val latestReport = reports.listFiles()?.filter { it.isFile && it.extension == "txt" }?.maxByOrNull { it.lastModified() }
+        val latestLog = File(root, "logs/latest.log")
+        val selected = latestReport?.takeIf { it.exists() } ?: latestLog.takeIf { it.exists() }
+        val reportText = if (selected != null) {
+            try { selected.readText().takeLast(60000) } catch (e: Exception) { "Não foi possível ler o relatório: " + (e.message ?: "erro") }
+        } else {
+            "Nenhum relatório encontrado ainda.\n\nQuando o motor do Minecraft estiver integrado, o launcher poderá acompanhar a execução e apresentar o erro aqui. Por enquanto, esta tela procura relatórios já existentes no diretório privado do aplicativo."
+        }
+        body.addView(text(if (latestReport != null) "Último crash: " + latestReport.name else if (latestLog.exists()) "Último log: latest.log" else "Nenhum crash detectado", 14f, mint, true))
+        body.addView(actionButton("Copiar relatório") {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Relatório EnderNova", reportText))
+            info("Relatório copiado. Você pode colar e enviar para análise.")
+        })
+        body.addView(actionButton("Atualizar relatório") { showPage("Diagnóstico") })
+        val logBox = android.widget.TextView(this).apply {
+            text = reportText
+            textSize = 11f
+            setTextColor(Color.rgb(210, 230, 220))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(Color.rgb(2, 8, 7), 10, Color.rgb(19, 62, 49))
+            setTextIsSelectable(true)
+        }
+        body.addView(logBox, LinearLayout.LayoutParams(-1, dp(360)))
+        body.addView(text("Observação: o início do jogo e a captura automática da saída do processo ainda dependem da integração do motor Java.", 11f, muted))
     }
 
     private fun pageHeading(title: String, subtitle: String) {
